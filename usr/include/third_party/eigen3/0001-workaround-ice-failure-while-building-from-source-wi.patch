@@ -1,0 +1,69 @@
+From 5e3d1fca74780964103c4fd69d38f85766ed6d59 Mon Sep 17 00:00:00 2001
+From: Hongxu Jia <hongxu.jia@windriver.com>
+Date: Tue, 17 Aug 2021 00:35:55 -0700
+Subject: [PATCH] workaround ice failure while building from source with gcc
+ 7.3.1
+
+The root cause is gcc ice issue:
+https://gcc.gnu.org/bugzilla/show_bug.cgi?id=89752
+
+But we could not patch on native gcc,so try to workaround,
+Refer: https://github.com/tensorflow/tensorflow/issues/25323
+
+Upstream-Status: Inappropriate [wr-installer specific]
+
+Signed-off-by: Hongxu Jia <hongxu.jia@windriver.com>
+---
+ unsupported/Eigen/CXX11/src/Tensor/TensorImagePatch.h | 3 ++-
+ unsupported/Eigen/CXX11/src/Tensor/TensorReduction.h  | 9 ++++++---
+ 2 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/unsupported/Eigen/CXX11/src/Tensor/TensorImagePatch.h b/unsupported/Eigen/CXX11/src/Tensor/TensorImagePatch.h
+index dd51850..b49d877 100644
+--- a/unsupported/Eigen/CXX11/src/Tensor/TensorImagePatch.h
++++ b/unsupported/Eigen/CXX11/src/Tensor/TensorImagePatch.h
+@@ -543,7 +543,8 @@ struct TensorEvaluator<const TensorImagePatchOp<Rows, Cols, ArgType>, Device>
+     EIGEN_ALIGN_MAX typename internal::remove_const<CoeffReturnType>::type values[PacketSize];
+     EIGEN_UNROLL_LOOP
+     for (int i = 0; i < PacketSize; ++i) {
+-      values[i] = coeff(index+i);
++      Self::CoeffReturnType a = coeff(index+i);
++      values[i] = a;
+     }
+     PacketReturnType rslt = internal::pload<PacketReturnType>(values);
+     return rslt;
+diff --git a/unsupported/Eigen/CXX11/src/Tensor/TensorReduction.h b/unsupported/Eigen/CXX11/src/Tensor/TensorReduction.h
+index 583f462..023acc2 100644
+--- a/unsupported/Eigen/CXX11/src/Tensor/TensorReduction.h
++++ b/unsupported/Eigen/CXX11/src/Tensor/TensorReduction.h
+@@ -798,8 +798,9 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
+       const Index firstIndex = firstInput(index);
+       for (Index i = 0; i < PacketSize; ++i) {
+         Op reducer(m_reducer);
+-        values[i] = internal::InnerMostDimReducer<Self, Op>::reduce(*this, firstIndex + i * num_values_to_reduce,
++        Self::CoeffReturnType a = internal::InnerMostDimReducer<Self, Op>::reduce(*this, firstIndex + i * num_values_to_reduce,
+                                                                     num_values_to_reduce, reducer);
++        values[i] = a;
+       }
+     } else if (PreservingInnerMostDims) {
+       const Index firstIndex = firstInput(index);
+@@ -812,12 +813,14 @@ struct TensorReductionEvaluatorBase<const TensorReductionOp<Op, Dims, ArgType, M
+         return reducer.finalizePacket(accum);
+       } else {
+         for (int i = 0; i < PacketSize; ++i) {
+-          values[i] = coeff(index + i);
++          Self::CoeffReturnType a = coeff(index + i);
++          values[i] = a;
+         }
+       }
+     } else {
+       for (int i = 0; i < PacketSize; ++i) {
+-        values[i] = coeff(index + i);
++        Self::CoeffReturnType a = coeff(index + i);
++        values[i] = a;
+       }
+     }
+     PacketReturnType rslt = internal::pload<PacketReturnType>(values);
+-- 
+2.30.2
+
